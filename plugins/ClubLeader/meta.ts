@@ -1,8 +1,9 @@
-import type { SettingsSchema } from '$slick';
+import type { PluginCategory, SettingsSchema } from '$slick';
 
 export const id = 'ClubLeader';
 export const pluginName = 'Club Leader Badge';
 export const description = 'Shows a badge next to Hack Club club leaders, using the Club API';
+export const category: PluginCategory = 'hackclub';
 
 export const settings = {
   badgeEmoji: {

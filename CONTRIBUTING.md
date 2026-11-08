@@ -31,7 +31,8 @@ what you expected, what happened instead, and any `[slick]` lines from the conso
 
 - Keep plugins small and focused, with comments where something isn't obvious.
 - Be kind to shared services: cache what you look up and limit requests (see `plugins/ClubLeader/limiter.ts`).
-- Plugins can only import `$slick`, their own files and npm packages. Use Slack's global `React`, don't import it.
+- Plugins can only import `$slick`, their own files, `plugins/_shared/` and npm packages. Use Slack's global `React`, don't import it.
+- Adding a row to one of Slack's menus? Use `addRow` and `watchMenus` from `plugins/_shared/menus.ts`, so it highlights like Slack's own rows.
 - Don't rename a plugin's id once it's released, since Slick stores people's settings under it.
 - Never put API keys or tokens in the code. Use a plugin setting instead.
 

@@ -10,6 +10,18 @@ declare module '$slick' {
     | { type: 'text' | 'color' | 'file'; label: string; description?: string; default: string; maxLength?: number; accept?: string; restartRequired?: boolean }
     | { type: 'select'; label: string; description?: string; default: string; options: { value: string; label: string }[]; restartRequired?: boolean };
 
+  /** Where a plugin is listed in Preferences, from Slick's PLUGIN_CATEGORIES. */
+  export type PluginCategory =
+    | 'messages'
+    | 'composer'
+    | 'people'
+    | 'channels'
+    | 'sounds'
+    | 'privacy'
+    | 'appearance'
+    | 'app'
+    | 'hackclub';
+
   export type SettingsSchema = Record<string, Setting>;
 
   /** What a schema's settings read as on `this.config`. */
@@ -61,6 +73,7 @@ declare module '$slick' {
     static readonly id: string;
     static readonly pluginName: string;
     static readonly description: string;
+    static readonly category?: PluginCategory;
     static readonly authors: string;
     static readonly defaultEnabled: boolean;
     static readonly settings: SettingsSchema;
