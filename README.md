@@ -13,6 +13,7 @@ plugins/<Name>/meta.ts     its id, name, description and settings
 plugins/_shared/           code several plugins use (not a plugin itself)
 types/slick.d.ts           types for Slick's plugin API ($slick)
 scripts/build-plugins.ts   builds plugins into public/plugins/ and src/plugins.json
+people.json                contributors' names and roles for the site, by GitHub login
 src/App.svelte             the site, which lists whatever was built
 ```
 
@@ -21,7 +22,7 @@ src/App.svelte             the site, which lists whatever was built
 ```bash
 npm install
 npm run plugins    # build plugins only
-npm run contributors # refresh src/contributors.json from GitHub
+npm run contributors # refresh src/contributors.json from GitHub and people.json
 npm run dev        # build plugins, then run the site locally
 npm run build      # build plugins and the site into dist/
 npm run typecheck  # type-check plugins and the site

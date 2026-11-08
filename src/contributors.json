@@ -1,17 +1,18 @@
 [
   {
     "login": "hippogriff101",
+    "name": "Freddie",
+    "role": "Club Leader Badge and the site",
     "avatar": "https://avatars.githubusercontent.com/u/143739931?v=4&s=96",
     "url": "https://github.com/hippogriff101",
-    "contributions": 10,
-    "label": "Freddie"
+    "contributions": 10
   },
   {
     "login": "SmartSparkCoding",
-    "avatar": "https://avatars.githubusercontent.com/u/186386267?v=4&s=96",
-    "url": "https://github.com/SmartSparkCoding",
-    "contributions": 0,
+    "name": "Jacob",
     "role": "Mic Guard and Pop Out Video",
-    "label": "Jacob"
+    "avatar": "https://avatars.githubusercontent.com/SmartSparkCoding?s=96",
+    "url": "https://github.com/SmartSparkCoding",
+    "contributions": 0
   }
 ]

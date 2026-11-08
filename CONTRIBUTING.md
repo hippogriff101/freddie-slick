@@ -25,7 +25,12 @@ what you expected, what happened instead, and any `[slick]` lines from the conso
    ```
 5. Try it in Slack: **Preferences → Install plugins**, and under **From a file** choose
    `public/plugins/<Name>.js`.
-6. Open a pull request saying what it does and how you tested it. Screenshots help.
+6. Add yourself to `people.json` (your GitHub login, the name you'd like shown, and what you worked on),
+   so you appear on the site with a name and role:
+   ```json
+   "your-github-login": { "name": "Your name", "role": "What you made" }
+   ```
+7. Open a pull request saying what it does and how you tested it. Screenshots help.
 
 ## Guidelines
 

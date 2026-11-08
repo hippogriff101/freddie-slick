@@ -121,19 +121,19 @@ npm run plugins</code></pre>
         <li>
           <a
             href={person.url}
-            title={person.role
-              ? `${person.login}: ${person.role}`
-              : `${person.login}: ${person.contributions} commit${person.contributions === 1 ? '' : 's'}`}
+            title="@{person.login}{person.contributions ? ` · ${person.contributions} commit${person.contributions === 1 ? '' : 's'}` : ''}"
           >
             <img src={person.avatar} alt="" width="48" height="48" loading="lazy" />
-            <span>{person.label ?? person.login}</span>
+            <span class="name">{person.name}</span>
+            <span class="role">{person.role}</span>
           </a>
         </li>
       {/each}
       <li>
         <a href="{REPO}/blob/main/CONTRIBUTING.md" class="you">
           <span class="plus" aria-hidden="true">+</span>
-          <span>You?</span>
+          <span class="name">You?</span>
+          <span class="role">Add a plugin or fix</span>
         </a>
       </li>
     </ul>
@@ -228,22 +228,39 @@ npm run plugins</code></pre>
     color: var(--muted);
   }
   ul.reasons b { color: var(--fg); }
-  ul.people { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 12px; }
+  ul.people { display: flex; flex-wrap: wrap; gap: 20px 16px; margin-top: 12px; }
   ul.people li { display: block; padding: 0; background: none; border: 0; }
   ul.people a {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 6px;
-    width: 88px;
-    font-size: 0.8rem;
+    width: 112px;
     color: var(--muted);
     text-decoration: none;
     text-align: center;
   }
-  ul.people a:hover { color: var(--fg); }
   ul.people a:focus-visible { outline: 2px solid var(--fg); outline-offset: 4px; border-radius: 8px; }
-  ul.people span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  ul.people .name {
+    max-width: 100%;
+    margin-top: 8px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--fg);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  ul.people .role {
+    font-size: 0.78rem;
+    line-height: 1.35;
+    /* Two lines at most, then an ellipsis. */
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  ul.people a:hover .name { color: var(--accent); }
   ul.people img,
   .plus {
     width: 48px;
