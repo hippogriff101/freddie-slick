@@ -9,6 +9,8 @@ export type Lookup = {
   /** The club they lead, or (for members) belong to. */
   club: string | null;
   status: string | null;
+  /** A leader who isn't the club's main leader (API key only). */
+  coLeader?: boolean;
   /** Set when they're a member rather than a leader (API key only). */
   member?: boolean;
   details?: ClubDetails | null;
@@ -31,6 +33,13 @@ export class HttpError extends Error {
 }
 
 const text = (value: unknown) => (typeof value === 'string' && value.trim() ? value.trim() : null);
+
+/** Slack IDs from a field that may be a list or a comma-separated string. */
+const ids = (value: unknown): string[] =>
+  (Array.isArray(value) ? value : typeof value === 'string' ? value.split(',') : [])
+    .filter((id): id is string => typeof id === 'string')
+    .map((id) => id.trim().toUpperCase())
+    .filter(Boolean);
 
 function parse(response: Response): Record<string, any> {
   if (response.status === 401) throw new KeyRejected();
@@ -57,8 +66,11 @@ export async function person(fetch: Fetch, userId: string, apiKey: string): Prom
   const isMember = !isLeader && member?.found === true;
   const club = text(isLeader ? leader?.club_name : isMember ? member?.club_name : null);
   const fields = club ? (data.clubs?.[club]?.fields ?? data.clubs?.[club] ?? null) : null;
+  // The club record names its main leader(s). A leader who isn't one of them is a co-leader.
+  const mainLeaders = ids(fields?.leader_slack_id);
   return {
     leader: isLeader,
+    coLeader: isLeader && mainLeaders.length > 0 && !mainLeaders.includes(userId.toUpperCase()),
     member: isMember,
     club,
     status: text(leader?.club_status) ?? text(fields?.status) ?? text(fields?.club_status),
@@ -70,9 +82,9 @@ export async function person(fetch: Fetch, userId: string, apiKey: string): Prom
   };
 }
 
-/** Tooltip text for a badge. */
-export function describe(info: Lookup): string {
-  const role = info.leader ? 'Club leader' : 'Club member';
+/** Tooltip text for a badge. Co-leaders are only called that when other roles are shown. */
+export function describe(info: Lookup, otherRoles = false): string {
+  const role = !info.leader ? 'Club member' : info.coLeader && otherRoles ? 'Club co-leader' : 'Club leader';
   if (!info.club) return role;
   const lines = [`${role}: ${info.club}${info.status ? ` (${info.status})` : ''}`];
   if (info.details?.country) lines.push(info.details.country);

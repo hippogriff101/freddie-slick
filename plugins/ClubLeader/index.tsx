@@ -11,7 +11,7 @@ import { Blocked, Limiter } from './limiter.ts';
 import * as meta from './meta.ts';
 
 type Emoji = { text: string; url: string | null };
-type View = { leader: Emoji; member: Emoji; underline: boolean; showMembers: boolean };
+type View = { leader: Emoji; coLeader: Emoji; member: Emoji; underline: boolean; otherRoles: boolean };
 type Message = { user?: string; bot_id?: string };
 
 const USER_ID = /^[UW][A-Z0-9]+$/;
@@ -37,7 +37,7 @@ export default class ClubLeader extends SlickPlugin<typeof meta.settings> {
   static readonly defaultEnabled = false;
   static readonly requiredAPIs = [] as const;
   static readonly settings = meta.settings;
-  static readonly liveSettings = ['badgeEmoji', 'memberEmoji', 'showMembers', 'recheckDays', 'underline', 'underlineColor'];
+  static readonly liveSettings = ['badgeEmoji', 'coLeaderEmoji', 'memberEmoji', 'showOtherRoles', 'recheckDays', 'underline', 'underlineColor'];
 
   private cache = this.api.Cache<Lookup>('club_leader', (info) =>
     info.failed ? FAILED_TTL_MS : Math.max(1, Number(this.config.recheckDays) || 7) * DAY_MS,
@@ -45,9 +45,10 @@ export default class ClubLeader extends SlickPlugin<typeof meta.settings> {
   private limiter = new Limiter({ gapMs: 400, perHour: 120, backoffMs: 15 * 60 * 1000, maxBackoffMs: 4 * 60 * 60 * 1000 });
   private view = new this.api.Store<View>({
     leader: { text: '♣', url: null },
+    coLeader: { text: '', url: null },
     member: { text: '', url: null },
     underline: false,
-    showMembers: false,
+    otherRoles: false,
   });
   private emojiList: Promise<Record<string, string>> | null = null;
   /** With a key: '/person' until it turns out the key can't read, then '/leader/slack'. */
@@ -77,9 +78,16 @@ export default class ClubLeader extends SlickPlugin<typeof meta.settings> {
     const Badge = ({ userId }: { userId: string }) => {
       const info = useLookup(userId);
       const view = this.view.use();
-      const emoji = info?.leader ? view.leader : info?.member && view.showMembers ? view.member : null;
+      // Other roles off: co-leaders are just leaders, and members get nothing.
+      const emoji = info?.leader
+        ? info.coLeader && view.otherRoles
+          ? view.coLeader
+          : view.leader
+        : info?.member && view.otherRoles
+          ? view.member
+          : null;
       if (!info || !emoji) return null;
-      const tip = describe(info);
+      const tip = describe(info, view.otherRoles);
       return (
         <span className="slick-club-leader" title={tip} aria-label={tip} data-stringify-ignore="">
           {emoji.url ? <img className="slick-club-leader__img" src={emoji.url} alt={emoji.text} /> : emoji.text}
@@ -152,15 +160,17 @@ export default class ClubLeader extends SlickPlugin<typeof meta.settings> {
   }
 
   private async refreshView() {
-    const [leader, member] = await Promise.all([
+    const [leader, coLeader, member] = await Promise.all([
       this.resolveEmoji(this.config.badgeEmoji, '♣'),
+      this.resolveEmoji(this.config.coLeaderEmoji, '🤝'),
       this.resolveEmoji(this.config.memberEmoji, '🧑‍💻'),
     ]);
     this.view.set({
       leader,
+      coLeader,
       member,
       underline: this.config.underline === true,
-      showMembers: this.config.showMembers === true && !!this.config.apiKey.trim(),
+      otherRoles: this.config.showOtherRoles === true && !!this.config.apiKey.trim(),
     });
   }
 
@@ -188,12 +198,13 @@ export default class ClubLeader extends SlickPlugin<typeof meta.settings> {
   }
 
   // Answers depend on the key, so a new key starts fresh (a short hash, never the key itself).
+  // "k2": keyed answers saved before co-leaders were recorded are looked up again.
   private key(userId: string) {
     const apiKey = this.config.apiKey.trim();
     if (!apiKey) return `n:${userId}`;
     let hash = 0;
     for (const char of apiKey) hash = (Math.imul(hash, 31) + char.charCodeAt(0)) | 0;
-    return `k${(hash >>> 0).toString(36)}:${userId}`;
+    return `k2${(hash >>> 0).toString(36)}:${userId}`;
   }
 
   private async lookUp(userId: string): Promise<Lookup | null> {

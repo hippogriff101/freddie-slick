@@ -34,6 +34,7 @@ test('person: leader with club details', async () => {
   const info = await person(reply(200, body), 'U1', 'k');
   assert.deepEqual(info, {
     leader: true,
+    coLeader: false,
     member: false,
     club: 'Example HS',
     status: 'Active',
@@ -56,5 +57,30 @@ test('person: member only', async () => {
 
 test('person: nobody', async () => {
   const info = await person(reply(200, { leader: { by_slack: { found: false } }, member: { by_slack: { found: false } } }), 'U1', 'k');
-  assert.deepEqual(info, { leader: false, member: false, club: null, status: null, details: null });
+  assert.deepEqual(info, { leader: false, coLeader: false, member: false, club: null, status: null, details: null });
+});
+
+const clubWith = (leaderIds: unknown) => ({
+  leader: { by_slack: { found: true, club_name: 'Example HS', club_status: 'Active' } },
+  member: { by_slack: { found: false } },
+  clubs: { 'Example HS': { fields: { leader_slack_id: leaderIds } } },
+});
+
+test("person: the club's main leader is not a co-leader", async () => {
+  assert.equal((await person(reply(200, clubWith(['U1'])), 'U1', 'k')).coLeader, false);
+  assert.equal((await person(reply(200, clubWith('U9, u1')), 'U1', 'k')).coLeader, false);
+});
+
+test('person: a leader the club does not name as main leader is a co-leader', async () => {
+  const info = await person(reply(200, clubWith(['U9'])), 'U1', 'k');
+  assert.equal(info.leader, true);
+  assert.equal(info.coLeader, true);
+  assert.equal(describe(info, true), 'Club co-leader: Example HS (Active)');
+  // With other roles off, they're shown as a leader.
+  assert.equal(describe(info), 'Club leader: Example HS (Active)');
+});
+
+test('person: no main leader recorded means nobody is called a co-leader', async () => {
+  assert.equal((await person(reply(200, clubWith(undefined)), 'U1', 'k')).coLeader, false);
+  assert.equal((await person(reply(200, clubWith([])), 'U1', 'k')).coLeader, false);
 });

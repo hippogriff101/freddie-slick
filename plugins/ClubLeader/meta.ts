@@ -17,14 +17,21 @@ export const settings = {
     type: 'text',
     label: 'Club API key (optional)',
     description:
-      "With a key that has Read permission, the badge's tooltip shows the club's name, status and country, and club members can get a badge too.",
+      "With a key that has Read permission, the badge's tooltip shows the club's name, status and country, and other roles can get their own badge.",
     default: '',
     maxLength: 200,
   },
-  showMembers: {
+  showOtherRoles: {
     type: 'boolean',
-    label: 'Badge club members too (needs an API key)',
+    label: 'Show other roles (API key required)',
+    description: 'Gives co-leaders and club members their own badges. Without this, co-leaders get the leader badge.',
     default: false,
+  },
+  coLeaderEmoji: {
+    type: 'text',
+    label: 'Co-leader badge emoji',
+    default: '🤝',
+    maxLength: 100,
   },
   memberEmoji: {
     type: 'text',
