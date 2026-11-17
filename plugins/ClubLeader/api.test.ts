@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { describe, KeyRejected, leaderBySlack, person, type Fetch } from './api.ts';
+import { describe, FAILED, KeyRejected, leaderBySlack, person, ttlMs, type Fetch } from './api.ts';
 
 const reply = (status: number, body: unknown): Fetch => async () => ({ status, body: JSON.stringify(body) });
 
@@ -83,4 +83,33 @@ test('person: a leader the club does not name as main leader is a co-leader', as
 test('person: no main leader recorded means nobody is called a co-leader', async () => {
   assert.equal((await person(reply(200, clubWith(undefined)), 'U1', 'k')).coLeader, false);
   assert.equal((await person(reply(200, clubWith([])), 'U1', 'k')).coLeader, false);
+});
+
+const DAY = 24 * 60 * 60 * 1000;
+const nobody = { leader: false, club: null, status: null };
+const aLeader = { leader: true, club: 'Example HS', status: 'Active' };
+const aMember = { leader: false, member: true, club: 'Example HS', status: 'Active' };
+
+test('ttlMs: people with no club follow their own setting', () => {
+  assert.equal(ttlMs(nobody, 7, 30), 30 * DAY);
+  assert.equal(ttlMs(nobody, 7, 14), 14 * DAY);
+  assert.equal(ttlMs(nobody, 7, 3), 3 * DAY);
+});
+
+test('ttlMs: 0 (or a bad value) for no-club people uses the re-check setting', () => {
+  assert.equal(ttlMs(nobody, 7, 0), 7 * DAY);
+  assert.equal(ttlMs(nobody, 7, Number.NaN), 7 * DAY);
+  assert.equal(ttlMs(nobody, 7, -5), 7 * DAY);
+  assert.equal(ttlMs(nobody, 7, 99), 30 * DAY);
+});
+
+test('ttlMs: people in a club always follow the re-check setting', () => {
+  assert.equal(ttlMs(aLeader, 7, 30), 7 * DAY);
+  assert.equal(ttlMs(aMember, 2, 30), 2 * DAY);
+});
+
+test('ttlMs: failures last an hour, and a bad setting falls back to 7 days', () => {
+  assert.equal(ttlMs(FAILED, 7, 30), 60 * 60 * 1000);
+  assert.equal(ttlMs(aLeader, Number.NaN, 30), 7 * DAY);
+  assert.equal(ttlMs(aLeader, 0, 30), 7 * DAY);
 });

@@ -82,6 +82,21 @@ export async function person(fetch: Fetch, userId: string, apiKey: string): Prom
   };
 }
 
+const HOUR_MS = 60 * 60 * 1000;
+const DAY_MS = 24 * HOUR_MS;
+/**
+ * How long an answer is remembered. Failures: an hour. People in a club: `recheckDays`.
+ * People with no club: `noClubDays` (most people have no club, and that rarely changes),
+ * or `recheckDays` when `noClubDays` is 0.
+ */
+export function ttlMs(info: Lookup, recheckDays: number, noClubDays: number): number {
+  if (info.failed) return HOUR_MS;
+  const days = Math.max(1, Number(recheckDays) || 7);
+  const inClub = info.leader || info.member === true;
+  const noClub = Math.min(30, Math.max(0, Number(noClubDays) || 0));
+  return (!inClub && noClub > 0 ? noClub : days) * DAY_MS;
+}
+
 /** Tooltip text for a badge. Co-leaders are only called that when other roles are shown. */
 export function describe(info: Lookup, otherRoles = false): string {
   const role = !info.leader ? 'Club member' : info.coLeader && otherRoles ? 'Club co-leader' : 'Club leader';

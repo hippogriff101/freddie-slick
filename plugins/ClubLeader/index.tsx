@@ -1,12 +1,13 @@
 // Badge (and optional underline) for Hack Club club leaders, and optionally members.
 //
 // Keeping Club API traffic low:
-// - answers, including failures, are cached in Slick storage (people for `recheckDays`, failures for an hour)
+// - answers, including failures, are cached in Slick storage (people for `recheckDays`, people with
+//   no club for 30 days by default, failures for an hour)
 // - only senders whose name is actually shown are looked up, never grouped follow-up messages
 // - requests go one at a time with a gap, under an hourly budget, and pause after errors
 
 import { SlickPlugin } from '$slick';
-import { describe, FAILED, HttpError, KeyRejected, leaderBySlack, person, type Lookup } from './api.ts';
+import { describe, FAILED, HttpError, KeyRejected, leaderBySlack, person, ttlMs, type Lookup } from './api.ts';
 import { Blocked, Limiter } from './limiter.ts';
 import * as meta from './meta.ts';
 
@@ -15,8 +16,6 @@ type View = { leader: Emoji; coLeader: Emoji; member: Emoji; underline: boolean;
 type Message = { user?: string; bot_id?: string };
 
 const USER_ID = /^[UW][A-Z0-9]+$/;
-const DAY_MS = 24 * 60 * 60 * 1000;
-const FAILED_TTL_MS = 60 * 60 * 1000;
 const EMOJI_NAME = /^:?([a-z0-9_+'-]+):?$/i;
 
 const personId = (userId?: string, botId?: string) =>
@@ -37,10 +36,10 @@ export default class ClubLeader extends SlickPlugin<typeof meta.settings> {
   static readonly defaultEnabled = false;
   static readonly requiredAPIs = [] as const;
   static readonly settings = meta.settings;
-  static readonly liveSettings = ['badgeEmoji', 'coLeaderEmoji', 'memberEmoji', 'showOtherRoles', 'recheckDays', 'underline', 'underlineColor'];
+  static readonly liveSettings = ['badgeEmoji', 'coLeaderEmoji', 'memberEmoji', 'showOtherRoles', 'recheckDays', 'noClubDays', 'underline', 'underlineColor'];
 
   private cache = this.api.Cache<Lookup>('club_leader', (info) =>
-    info.failed ? FAILED_TTL_MS : Math.max(1, Number(this.config.recheckDays) || 7) * DAY_MS,
+    ttlMs(info, this.config.recheckDays, this.config.noClubDays ?? 30),
   );
   private limiter = new Limiter({ gapMs: 400, perHour: 120, backoffMs: 15 * 60 * 1000, maxBackoffMs: 4 * 60 * 60 * 1000 });
   private view = new this.api.Store<View>({
