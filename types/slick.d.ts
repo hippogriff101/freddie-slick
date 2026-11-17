@@ -41,6 +41,8 @@ declare module '$slick' {
     get(key: string, fetcher: (key: string) => Promise<T>): Promise<T>;
     /** What's already known, without fetching. Safe during a render. */
     peek(key: string): T | undefined;
+    /** Drops one saved answer, from memory and from disk. */
+    forget(key: string): void;
   }
 
   export interface SlickAPI {

@@ -27,6 +27,13 @@ export const settings = {
     description: 'Gives co-leaders and club members their own badges. Without this, co-leaders get the leader badge.',
     default: false,
   },
+  showProfile: {
+    type: 'boolean',
+    label: 'Show club details on profiles (API key required)',
+    description:
+      'Adds a Hack Club section to profiles with the club, role and a Resync button, and a one-line summary on hover cards. Personal details stay hidden until you click, and addresses are never shown.',
+    default: true,
+  },
   coLeaderEmoji: {
     type: 'text',
     label: 'Co-leader badge emoji',
