@@ -7,13 +7,29 @@
 // - requests go one at a time with a gap, under an hourly budget, and pause after errors
 
 import { SlickPlugin } from '$slick';
-import { describe, FAILED, HttpError, KeyRejected, leaderBySlack, person, ttlMs, type Lookup } from './api.ts';
+import {
+  ago,
+  describe,
+  FAILED,
+  HttpError,
+  KeyRejected,
+  leaderBySlack,
+  person,
+  personFull,
+  roleOf,
+  ttlMs,
+  type Lookup,
+  type Row,
+} from './api.ts';
 import { Blocked, Limiter } from './limiter.ts';
 import * as meta from './meta.ts';
 
 type Emoji = { text: string; url: string | null };
-type View = { leader: Emoji; coLeader: Emoji; member: Emoji; underline: boolean; otherRoles: boolean };
+type View = { leader: Emoji; coLeader: Emoji; member: Emoji; underline: boolean; otherRoles: boolean; profile: boolean };
 type Message = { user?: string; bot_id?: string };
+type ProfileShellProps = { profileId?: string; uiComponentName?: string; children?: React.ReactNode };
+/** A fresh answer asked for by hand. `hidden` is personal details: kept in memory only, never saved. */
+type Fresh = { info: Lookup; hidden: Row[] } | { error: string };
 
 const USER_ID = /^[UW][A-Z0-9]+$/;
 const EMOJI_NAME = /^:?([a-z0-9_+'-]+):?$/i;
@@ -36,7 +52,17 @@ export default class ClubLeader extends SlickPlugin<typeof meta.settings> {
   static readonly defaultEnabled = false;
   static readonly requiredAPIs = [] as const;
   static readonly settings = meta.settings;
-  static readonly liveSettings = ['badgeEmoji', 'coLeaderEmoji', 'memberEmoji', 'showOtherRoles', 'recheckDays', 'noClubDays', 'underline', 'underlineColor'];
+  static readonly liveSettings = [
+    'badgeEmoji',
+    'coLeaderEmoji',
+    'memberEmoji',
+    'showOtherRoles',
+    'showProfile',
+    'recheckDays',
+    'noClubDays',
+    'underline',
+    'underlineColor',
+  ];
 
   private cache = this.api.Cache<Lookup>('club_leader', (info) =>
     ttlMs(info, this.config.recheckDays, this.config.noClubDays ?? 30),
@@ -48,6 +74,7 @@ export default class ClubLeader extends SlickPlugin<typeof meta.settings> {
     member: { text: '', url: null },
     underline: false,
     otherRoles: false,
+    profile: false,
   });
   private emojiList: Promise<Record<string, string>> | null = null;
   /** With a key: '/person' until it turns out the key can't read, then '/leader/slack'. */
@@ -132,6 +159,146 @@ export default class ClubLeader extends SlickPlugin<typeof meta.settings> {
         );
       },
     );
+
+    // The Hack Club section on a profile (API key only).
+    const ProfileSection = ({ userId }: { userId: string }) => {
+      const view = this.view.use();
+      const cached = useLookup(view.profile ? userId : null);
+      const [fresh, setFresh] = React.useState<{ info: Lookup; hidden: Row[] } | null>(null);
+      const [revealed, setRevealed] = React.useState(false);
+      const [busy, setBusy] = React.useState(false);
+      const [error, setError] = React.useState('');
+      const live = React.useRef(true);
+      React.useEffect(
+        () => () => {
+          live.current = false;
+        },
+        [],
+      );
+
+      // Asks the Club API now, whatever the saved answer's age. Also how personal details are loaded.
+      const sync = async (reveal: boolean) => {
+        if (busy) return;
+        setBusy(true);
+        setError('');
+        const result = await this.refresh(userId);
+        if (!live.current) return;
+        if ('error' in result) setError(result.error);
+        else {
+          setFresh(result);
+          if (reveal) setRevealed(true);
+        }
+        setBusy(false);
+      };
+
+      const info = fresh?.info ?? cached;
+      const inClub = !!info && !info.failed && (info.leader || info.member === true);
+      // Answers saved before this section existed have no club details: fetch them once, on first view.
+      // Skipped when the key can't read club records, since that request would only fail.
+      const needsDetails = inClub && !fresh && info.profile === undefined && this.keyedEndpoint === 'person';
+      React.useEffect(() => {
+        if (needsDetails) void sync(false);
+      }, [needsDetails]);
+      // After every hook, so turning the setting on or off never changes how many hooks run.
+      if (!view.profile) return null;
+      const checked = ago(info?.at);
+      const hidden = fresh?.hidden ?? [];
+      const rows: Row[] = inClub
+        ? [
+            { label: 'Role', value: roleOf(info, true).replace(/^Club /, '').replace(/^./, (c) => c.toUpperCase()) },
+            ...(info.club ? [{ label: 'Club', value: info.club }] : []),
+            ...(info.status ? [{ label: 'Status', value: info.status }] : []),
+            ...(info.profile ?? []),
+          ]
+        : [];
+      const line = ({ label, value, href }: Row) => (
+        <div className="slick-club-profile__row" key={label}>
+          <dt>{label}</dt>
+          <dd>
+            {href ? (
+              <a href={href} target="_blank" rel="noreferrer">
+                {value}
+              </a>
+            ) : (
+              value
+            )}
+          </dd>
+        </div>
+      );
+
+      return (
+        <div className="p-r_member_profile_section slick-club-profile">
+          <div className="slick-club-profile__head">
+            <span className="slick-club-profile__heading">Hack Club</span>
+            <button
+              type="button"
+              className="slick-club-profile__button"
+              onClick={() => void sync(false)}
+              disabled={busy}
+              title="Ask the Club API again now"
+            >
+              {busy ? 'Checking…' : '↻ Resync'}
+            </button>
+          </div>
+          {!info ? (
+            <p className="slick-club-profile__note">Not checked yet.</p>
+          ) : info.failed ? (
+            <p className="slick-club-profile__note">The last check failed. Try Resync.</p>
+          ) : !inClub ? (
+            <p className="slick-club-profile__note">Not a club leader or member.</p>
+          ) : (
+            <dl className="slick-club-profile__rows">
+              {rows.map(line)}
+              {revealed && hidden.map(line)}
+            </dl>
+          )}
+          {inClub &&
+            (revealed ? (
+              <button type="button" className="slick-club-profile__button" onClick={() => setRevealed(false)}>
+                {hidden.length ? 'Hide personal details' : 'No personal details on record'}
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="slick-club-profile__button"
+                onClick={() => (fresh ? setRevealed(true) : void sync(true))}
+                disabled={busy}
+                title="Loads the main leader's name, contact email and venue from the Club API. Not saved."
+              >
+                Show personal details
+              </button>
+            ))}
+          {error && (
+            <p className="slick-club-profile__note slick-club-profile__note--error" role="status">
+              {error}
+            </p>
+          )}
+          {checked && !error && <p className="slick-club-profile__note">Checked {checked}</p>}
+        </div>
+      );
+    };
+
+    // The profile pane's scrollable body, the same spot Slick's InstalledApps plugin uses.
+    this.api.patchComponent<{ children?: unknown }>('Content', (Original) => (props) => {
+      const shell = props.children;
+      if (!React.isValidElement<ProfileShellProps>(shell)) return <Original {...props} />;
+      const userId = personId(shell.props.profileId);
+      const sections = shell.props.children;
+      if (shell.props.uiComponentName !== 'rimeto_member_profile_flexpane' || !userId || !Array.isArray(sections)) {
+        return <Original {...props} />;
+      }
+      const withClub = sections.map((child: React.ReactNode) => {
+        if (
+          !React.isValidElement<{ 'data-qa'?: string; children?: React.ReactNode }>(child) ||
+          child.props['data-qa'] !== 'member_profile_pane'
+        ) {
+          return child;
+        }
+        // Keyed by person, so switching profiles starts with nothing revealed.
+        return React.cloneElement(child, undefined, child.props.children, <ProfileSection key={`slick-club-profile-${userId}`} userId={userId} />);
+      });
+      return <Original {...props} children={React.cloneElement(shell, undefined, ...withClub)} />;
+    });
   }
 
   onSettingsChange() {
@@ -154,6 +321,33 @@ export default class ClubLeader extends SlickPlugin<typeof meta.settings> {
         text-decoration-thickness: 2px !important;
         text-underline-offset: 3px;
       }
+      .slick-club-profile { display: block; padding: 16px; }
+      .slick-club-profile__head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+      .slick-club-profile__heading {
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.02em;
+        text-transform: uppercase;
+        opacity: 0.6;
+      }
+      .slick-club-profile__rows { margin: 0 0 8px; display: grid; gap: 4px; }
+      .slick-club-profile__row { display: flex; gap: 12px; font-size: 13px; }
+      .slick-club-profile__row dt { flex: 0 0 104px; opacity: 0.65; }
+      .slick-club-profile__row dd { margin: 0; min-width: 0; overflow-wrap: anywhere; user-select: text; }
+      .slick-club-profile__button {
+        font: inherit;
+        font-size: 12px;
+        padding: 3px 10px;
+        border: 1px solid rgba(134, 134, 134, 0.4);
+        border-radius: 6px;
+        background: rgba(134, 134, 134, 0.09);
+        color: inherit;
+        cursor: pointer;
+      }
+      .slick-club-profile__button:hover:not(:disabled) { background: rgba(134, 134, 134, 0.2); }
+      .slick-club-profile__button:disabled { opacity: 0.6; cursor: default; }
+      .slick-club-profile__note { margin: 6px 0 0; font-size: 12px; opacity: 0.65; }
+      .slick-club-profile__note--error { color: #ec3750; opacity: 1; }
     `);
     void this.refreshView();
   }
@@ -170,6 +364,7 @@ export default class ClubLeader extends SlickPlugin<typeof meta.settings> {
       member,
       underline: this.config.underline === true,
       otherRoles: this.config.showOtherRoles === true && !!this.config.apiKey.trim(),
+      profile: this.config.showProfile !== false && !!this.config.apiKey.trim(),
     });
   }
 
@@ -218,6 +413,30 @@ export default class ClubLeader extends SlickPlugin<typeof meta.settings> {
         this.log(`could not check ${userId}`, error);
       }
       return null;
+    }
+  }
+
+  /**
+   * An on-demand lookup from a profile's Resync button: asks the Club API now, whatever the
+   * saved answer's age, and replaces it. Still one at a time, but not held back by the hourly budget.
+   */
+  private async refresh(userId: string): Promise<Fresh> {
+    const apiKey = this.config.apiKey.trim();
+    if (!apiKey) return { error: 'Add a Club API key in the plugin settings first.' };
+    try {
+      const result = await this.limiter.run(() => personFull(this.api.fetch.bind(this.api), userId, apiKey), { force: true });
+      this.limiter.recovered();
+      // Swap the saved answer. The delete is awaited so the old one can't be read back.
+      const key = this.key(userId);
+      this.cache.forget(key);
+      await this.api.storage.delete(`cache:club_leader:${key}`);
+      await this.cache.get(key, async () => result.lookup);
+      return { info: result.lookup, hidden: result.hidden };
+    } catch (error) {
+      if (error instanceof Blocked) return { error: 'The Club API rejected your API key. Fix it in the plugin settings.' };
+      if (error instanceof KeyRejected) return { error: 'Your API key needs Read permission for club details.' };
+      this.log(`could not resync ${userId}`, error);
+      return { error: "Couldn't reach the Club API. Try again in a moment." };
     }
   }
 

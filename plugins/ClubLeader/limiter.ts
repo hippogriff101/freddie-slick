@@ -40,11 +40,15 @@ export class Limiter {
     return null;
   }
 
-  /** Runs `task` in turn. Throws Blocked, without sending, while paused or over budget. */
-  run<T>(task: () => Promise<T>): Promise<T> {
+  /**
+   * Runs `task` in turn. Throws Blocked, without sending, while paused or over budget.
+   * `force` is for a request someone asked for by hand: it skips the pause and the budget
+   * (it still counts towards the budget), but not a permanent stop.
+   */
+  run<T>(task: () => Promise<T>, { force = false } = {}): Promise<T> {
     const next = this.chain.then(async () => {
       const reason = this.blockedReason();
-      if (reason) throw new Blocked(reason);
+      if (reason && !(force && this.pausedUntil !== Infinity)) throw new Blocked(reason);
       this.sent.push(this.now());
       this.total++;
       try {

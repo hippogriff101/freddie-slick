@@ -1,11 +1,13 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { describe, FAILED, KeyRejected, leaderBySlack, person, ttlMs, type Fetch } from './api.ts';
+import { describe, FAILED, KeyRejected, leaderBySlack, person, ttlMs, type Fetch, type Lookup } from './api.ts';
 
 const reply = (status: number, body: unknown): Fetch => async () => ({ status, body: JSON.stringify(body) });
+// The answer without its fetch time and profile rows, which profile.test.ts covers.
+const core = ({ at: _at, profile: _profile, ...rest }: Lookup) => rest;
 
 test('leaderBySlack: public answer', async () => {
-  assert.deepEqual(await leaderBySlack(reply(200, { leader: true }), 'U1', ''), { leader: true, club: null, status: null });
+  assert.deepEqual(core(await leaderBySlack(reply(200, { leader: true }), 'U1', '')), { leader: true, club: null, status: null });
   assert.equal((await leaderBySlack(reply(200, { leader: false }), 'U1', '')).leader, false);
 });
 
@@ -16,7 +18,7 @@ test('leaderBySlack: keyed answer and headers', async () => {
     assert.match(url, /\/leader\/slack\?slackid=U1$/);
     return { status: 200, body: JSON.stringify({ club_name: 'Example HS', club_status: 'Active' }) };
   };
-  assert.deepEqual(await leaderBySlack(fetch, 'U1', 'secret'), { leader: true, club: 'Example HS', status: 'Active' });
+  assert.deepEqual(core(await leaderBySlack(fetch, 'U1', 'secret')), { leader: true, club: 'Example HS', status: 'Active' });
   assert.deepEqual(seen, { Authorization: 'secret' });
   assert.equal((await leaderBySlack(reply(200, { club_name: null }), 'U1', 'secret')).leader, false);
 });
@@ -32,7 +34,7 @@ test('person: leader with club details', async () => {
     clubs: { 'Example HS': { fields: { club_name: 'Example HS', level: 2, venue_addr_country: 'UK', club_website: 'https://ex.club' } } },
   };
   const info = await person(reply(200, body), 'U1', 'k');
-  assert.deepEqual(info, {
+  assert.deepEqual(core(info), {
     leader: true,
     coLeader: false,
     member: false,
@@ -57,7 +59,7 @@ test('person: member only', async () => {
 
 test('person: nobody', async () => {
   const info = await person(reply(200, { leader: { by_slack: { found: false } }, member: { by_slack: { found: false } } }), 'U1', 'k');
-  assert.deepEqual(info, { leader: false, coLeader: false, member: false, club: null, status: null, details: null });
+  assert.deepEqual(core(info), { leader: false, coLeader: false, member: false, club: null, status: null, details: null });
 });
 
 const clubWith = (leaderIds: unknown) => ({
