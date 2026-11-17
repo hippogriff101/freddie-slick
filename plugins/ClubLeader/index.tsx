@@ -9,17 +9,20 @@
 import { SlickPlugin } from '$slick';
 import {
   ago,
+  decorate,
   describe,
   FAILED,
   HttpError,
   KeyRejected,
   leaderBySlack,
+  oneLine,
   person,
   personFull,
   roleOf,
   ttlMs,
   type Lookup,
   type Row,
+  type ShownRow,
 } from './api.ts';
 import { Blocked, Limiter } from './limiter.ts';
 import * as meta from './meta.ts';
@@ -30,6 +33,8 @@ type Message = { user?: string; bot_id?: string };
 type ProfileShellProps = { profileId?: string; uiComponentName?: string; children?: React.ReactNode };
 /** A fresh answer asked for by hand. `hidden` is personal details: kept in memory only, never saved. */
 type Fresh = { info: Lookup; hidden: Row[] } | { error: string };
+
+class NotSaved extends Error {}
 
 const USER_ID = /^[UW][A-Z0-9]+$/;
 const EMOJI_NAME = /^:?([a-z0-9_+'-]+):?$/i;
@@ -94,6 +99,22 @@ export default class ClubLeader extends SlickPlugin<typeof meta.settings> {
         if (!userId) return;
         let live = true;
         void this.lookUp(userId).then((result) => live && setInfo(result));
+        return () => {
+          live = false;
+        };
+      }, [userId]);
+      return info;
+    };
+
+    // Like useLookup, but never asks the Club API: only what's already saved. For the hover card.
+    const useSaved = (userId: string | null) => {
+      const [info, setInfo] = React.useState<Lookup | null>(() =>
+        userId ? (this.cache.peek(this.key(userId)) ?? null) : null,
+      );
+      React.useEffect(() => {
+        if (!userId) return;
+        let live = true;
+        void this.saved(userId).then((result) => live && setInfo(result));
         return () => {
           live = false;
         };
@@ -203,18 +224,20 @@ export default class ClubLeader extends SlickPlugin<typeof meta.settings> {
       if (!view.profile) return null;
       const checked = ago(info?.at);
       const hidden = fresh?.hidden ?? [];
-      const rows: Row[] = inClub
+      const rows: ShownRow[] = inClub
         ? [
             { label: 'Role', value: roleOf(info, true).replace(/^Club /, '').replace(/^./, (c) => c.toUpperCase()) },
             ...(info.club ? [{ label: 'Club', value: info.club }] : []),
             ...(info.status ? [{ label: 'Status', value: info.status }] : []),
-            ...(info.profile ?? []),
+            // Adds the club's age and flags an old check-in, worked out from today's date.
+            ...decorate(info.profile ?? []),
           ]
         : [];
-      const line = ({ label, value, href }: Row) => (
-        <div className="slick-club-profile__row" key={label}>
+      const line = ({ label, value, href, note, warn }: ShownRow) => (
+        <div className={`slick-club-profile__row${warn ? ' slick-club-profile__row--warn' : ''}`} key={label} title={warn}>
           <dt>{label}</dt>
           <dd>
+            {warn ? <span aria-label={warn}>⚠ </span> : null}
             {href ? (
               <a href={href} target="_blank" rel="noreferrer">
                 {value}
@@ -222,6 +245,7 @@ export default class ClubLeader extends SlickPlugin<typeof meta.settings> {
             ) : (
               value
             )}
+            {note ? <span className="slick-club-profile__sub"> · {note}</span> : null}
           </dd>
         </div>
       );
@@ -277,6 +301,30 @@ export default class ClubLeader extends SlickPlugin<typeof meta.settings> {
         </div>
       );
     };
+
+    // Hover card: one line such as "Co-leader · Example HS", from saved answers only.
+    // The card says who it's for; the line is added after the name block inside it.
+    const Card = React.createContext<string | null>(null);
+    const CardLine = ({ userId }: { userId: string }) => {
+      const view = this.view.use();
+      const info = useSaved(view.profile ? userId : null);
+      const text = view.profile ? oneLine(info, view.otherRoles) : null;
+      return text ? <div className="slick-club-card">{text}</div> : null;
+    };
+    this.api.patchComponent<{ memberId?: string }>('MemberProfileHoverCard', (Original) => (props) => (
+      <Card.Provider value={personId(props.memberId)}>
+        <Original {...props} />
+      </Card.Provider>
+    ));
+    this.api.patchComponent<Record<string, unknown>>('MemberProfileBaseEntity', (Original) => (props) => {
+      const userId = React.useContext(Card);
+      return (
+        <>
+          <Original {...props} />
+          {userId ? <CardLine userId={userId} /> : null}
+        </>
+      );
+    });
 
     // The profile pane's scrollable body, the same spot Slick's InstalledApps plugin uses.
     this.api.patchComponent<{ children?: unknown }>('Content', (Original) => (props) => {
@@ -348,6 +396,10 @@ export default class ClubLeader extends SlickPlugin<typeof meta.settings> {
       .slick-club-profile__button:disabled { opacity: 0.6; cursor: default; }
       .slick-club-profile__note { margin: 6px 0 0; font-size: 12px; opacity: 0.65; }
       .slick-club-profile__note--error { color: #ec3750; opacity: 1; }
+      .slick-club-profile__sub { opacity: 0.65; }
+      .slick-club-profile__row--warn dd { color: #d97706; }
+      .slick-club-profile__row--warn .slick-club-profile__sub { opacity: 1; }
+      .slick-club-card { margin-top: 4px; font-size: 13px; opacity: 0.8; }
     `);
     void this.refreshView();
   }
@@ -405,6 +457,8 @@ export default class ClubLeader extends SlickPlugin<typeof meta.settings> {
     try {
       return await this.cache.get(this.key(userId), () => this.limiter.run(() => this.request(userId)));
     } catch (error) {
+      // A hover card's saved-only check was in flight for the same person and found nothing: ask properly.
+      if (error instanceof NotSaved) return this.lookUp(userId);
       // Blocked: nothing was sent and nothing is cached, so a later render can try again.
       if (error instanceof Blocked) {
         if (this.lastBlockLog !== error.message) this.log(`holding off on Club API requests: ${error.message}`);
@@ -412,6 +466,18 @@ export default class ClubLeader extends SlickPlugin<typeof meta.settings> {
       } else {
         this.log(`could not check ${userId}`, error);
       }
+      return null;
+    }
+  }
+
+  /** The saved answer for someone, from memory or disk, or null. Never sends a request. */
+  private async saved(userId: string): Promise<Lookup | null> {
+    try {
+      // The cache checks memory, then disk, then calls this fetcher, which refuses. A refusal isn't saved.
+      return await this.cache.get(this.key(userId), async () => {
+        throw new NotSaved();
+      });
+    } catch {
       return null;
     }
   }

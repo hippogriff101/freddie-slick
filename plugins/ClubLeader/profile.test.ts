@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { ago, privateRows, profileRows, readPerson, roleOf } from './api.ts';
+import { ago, daysSince, decorate, oneLine, privateRows, profileRows, readPerson, roleOf, span } from './api.ts';
 import { Blocked, Limiter } from './limiter.ts';
 
 // Shaped like a real club record, with made-up values.
@@ -129,4 +129,55 @@ test('limiter: a forced request skips the pause and the budget, but not a stop',
   limiter.stop();
   await assert.rejects(limiter.run(task, { force: true }), Blocked);
   assert.equal(sent, 3);
+});
+
+const NOW = Date.UTC(2026, 10, 17, 12); // 17 November 2026
+
+test('span: time since a date, in words', () => {
+  assert.equal(span('2025-09-01', NOW), '1 year, 2 months');
+  assert.equal(span('2024-11-17', NOW), '2 years');
+  assert.equal(span('2026-08-17', NOW), '3 months');
+  assert.equal(span('2026-10-18', NOW), '30 days'); // one day short of a month
+  assert.equal(span('2026-11-16', NOW), '1 day');
+  assert.equal(span('2026-11-17', NOW), 'today');
+  assert.equal(span('2026-12-01', NOW), null); // in the future
+  assert.equal(span('soon', NOW), null);
+  assert.equal(daysSince('2026-11-07', NOW), 10);
+});
+
+test('decorate: club age in words', () => {
+  assert.deepEqual(decorate([{ label: 'Club created', value: '2025-09-01' }], NOW), [
+    { label: 'Club created', value: '2025-09-01', note: '1 year, 2 months old' },
+  ]);
+});
+
+test('decorate: flags a check-in older than 60 days, and only then', () => {
+  const [fresh] = decorate([{ label: 'Last check-in', value: '2026-10-30' }], NOW);
+  assert.equal(fresh.note, '18 days ago');
+  assert.equal(fresh.warn, undefined);
+  const [edge] = decorate([{ label: 'Last check-in', value: '2026-09-18' }], NOW); // exactly 60 days
+  assert.equal(edge.warn, undefined);
+  const [stale] = decorate([{ label: 'Last check-in', value: '2026-09-17' }], NOW); // 61 days
+  assert.equal(stale.note, '2 months ago');
+  assert.equal(stale.warn, 'No check-in for over 60 days');
+});
+
+test('decorate: leaves other rows alone', () => {
+  const rows = [{ label: 'Country', value: 'United Kingdom' }, { label: 'First meeting', value: '2026-01-12' }, { label: 'Members', value: '8' }];
+  assert.deepEqual(decorate(rows, NOW), rows);
+});
+
+test('oneLine: the hover card summary', () => {
+  const lead = { leader: true, club: 'Example HS', status: 'Active' };
+  assert.equal(oneLine(lead), 'Leader · Example HS');
+  assert.equal(oneLine({ ...lead, coLeader: true }, true), 'Co-leader · Example HS');
+  assert.equal(oneLine({ ...lead, coLeader: true }, false), 'Leader · Example HS');
+  assert.equal(oneLine({ leader: true, club: null, status: null }), 'Club leader');
+  // Members only when other roles are shown, like the badge.
+  const member = { leader: false, member: true, club: 'Example HS', status: null };
+  assert.equal(oneLine(member, true), 'Member · Example HS');
+  assert.equal(oneLine(member, false), null);
+  assert.equal(oneLine({ leader: false, club: null, status: null }, true), null);
+  assert.equal(oneLine(null), null);
+  assert.equal(oneLine({ leader: false, club: null, status: null, failed: true }), null);
 });

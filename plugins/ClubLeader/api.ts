@@ -184,6 +184,67 @@ export function describe(info: Lookup, otherRoles = false): string {
   return lines.join('\n');
 }
 
+/** "Co-leader · Example HS", for the hover card. Null for people with no club. */
+export function oneLine(info: Lookup | null | undefined, otherRoles = false): string | null {
+  if (!info || info.failed) return null;
+  // Members only count when other roles are shown, the same rule as the badge.
+  if (!info.leader && !(info.member && otherRoles)) return null;
+  const role = roleOf(info, otherRoles).replace(/^Club /, '');
+  return info.club ? `${role.replace(/^./, (c) => c.toUpperCase())} · ${info.club}` : `Club ${role}`;
+}
+
+const plural = (count: number, unit: string) => `${count} ${unit}${count === 1 ? '' : 's'}`;
+const dayOf = (value: string) => {
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
+  return match ? Date.UTC(+match[1], +match[2] - 1, +match[3]) : null;
+};
+
+/** Whole days from a YYYY-MM-DD date until now. Null for a bad or future date. */
+export function daysSince(value: string, now = Date.now()): number | null {
+  const then = dayOf(value);
+  if (then === null || then > now) return null;
+  return Math.floor((now - then) / DAY_MS);
+}
+
+/** How long ago a YYYY-MM-DD date was, in words: "1 year, 2 months", "3 months", "12 days", "today". */
+export function span(value: string, now = Date.now()): string | null {
+  const days = daysSince(value, now);
+  const then = dayOf(value);
+  if (days === null || then === null) return null;
+  const from = new Date(then);
+  const to = new Date(now);
+  const months =
+    (to.getUTCFullYear() - from.getUTCFullYear()) * 12 +
+    (to.getUTCMonth() - from.getUTCMonth()) -
+    (to.getUTCDate() < from.getUTCDate() ? 1 : 0);
+  if (months < 1) return days === 0 ? 'today' : plural(days, 'day');
+  const years = Math.floor(months / 12);
+  return [years ? plural(years, 'year') : '', months % 12 ? plural(months % 12, 'month') : ''].filter(Boolean).join(', ');
+}
+
+/** A club with no check-in for longer than this is flagged. */
+export const STALE_DAYS = 60;
+
+export type ShownRow = Row & { note?: string; warn?: string };
+
+/** Adds the words that depend on today's date: the club's age, and how old the last check-in is. */
+export function decorate(rows: Row[], now = Date.now()): ShownRow[] {
+  return rows.map((entry) => {
+    const words = span(entry.value, now);
+    if (!words) return entry;
+    if (entry.label === 'Club created') return { ...entry, note: words === 'today' ? 'new today' : `${words} old` };
+    if (entry.label === 'Last check-in') {
+      const stale = (daysSince(entry.value, now) ?? 0) > STALE_DAYS;
+      return {
+        ...entry,
+        note: words === 'today' ? 'today' : `${words} ago`,
+        ...(stale ? { warn: `No check-in for over ${STALE_DAYS} days` } : {}),
+      };
+    }
+    return entry;
+  });
+}
+
 /** "just now", "5 minutes ago", "3 days ago". */
 export function ago(at: number | undefined, now = Date.now()): string | null {
   if (!at) return null;

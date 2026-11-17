@@ -31,7 +31,7 @@ export const settings = {
     type: 'boolean',
     label: 'Show club details on profiles (API key required)',
     description:
-      'Adds a Hack Club section to profiles with the club, role and a Resync button. Personal details stay hidden until you click, and addresses are never shown.',
+      'Adds a Hack Club section to profiles with the club, role and a Resync button, and a one-line summary on hover cards. Personal details stay hidden until you click, and addresses are never shown.',
     default: true,
   },
   coLeaderEmoji: {
