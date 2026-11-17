@@ -47,6 +47,15 @@ export const settings = {
     min: 1,
     max: 30,
   },
+  noClubDays: {
+    type: 'number',
+    label: 'Re-check people with no club every (days)',
+    description:
+      'Most people have no club, so a long time here cuts requests a lot, but someone who becomes a leader waits this long for a badge. 0 uses the setting above.',
+    default: 30,
+    min: 0,
+    max: 30,
+  },
   underline: {
     type: 'boolean',
     label: "Underline leaders' names too",
